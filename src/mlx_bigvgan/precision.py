@@ -2,11 +2,16 @@
 # SPDX-License-Identifier: MIT
 # Extracted from Waveform Last Mile's credited MLX implementation; see NOTICE-precision.md.
 """Inference-only, channels-last MLX operators; no model loading or global policy edits."""
+
 from __future__ import annotations
+
 import math
+
 import mlx.core as mx
 import mlx.nn as nn
+
 from .phase_geometry import phase_plan
+
 
 class PreciseConv1d(nn.Module):
     """Dense Conv1d with zero-padded channel tiles and exact output slicing."""
@@ -54,15 +59,19 @@ class PhaseConvTranspose1d(nn.Module):
         super().__init__()
         if type(tile) is not int or tile != 16:
             raise ValueError("registered precise path requires channel tile 16")
-        if source.dilation != 1 or source.output_padding != 0:
-            raise ValueError("phase decomposition requires dilation=1 and output_padding=0")
+        if source.dilation != 1 or getattr(source, "output_padding", 0) != 0:
+            raise ValueError(
+                "phase decomposition requires dilation=1 and output_padding=0"
+            )
         output_channels, kernel_size, input_channels = source.weight.shape
         if kernel_size != 2 * source.padding + source.stride:
             raise ValueError(
                 "phase decomposition requires exact length-preserving BigVGAN geometry"
             )
         if "bias" not in source:
-            raise ValueError("phase decomposition requires the checkpoint's explicit bias")
+            raise ValueError(
+                "phase decomposition requires the checkpoint's explicit bias"
+            )
         padded_input = math.ceil(input_channels / tile) * tile
         padded_output = math.ceil(output_channels / tile) * tile
         self.input_padding = padded_input - input_channels
@@ -77,7 +86,9 @@ class PhaseConvTranspose1d(nn.Module):
         self.phase_starts: list[int] = []
         if getattr(source, "groups", 1) != 1:
             raise ValueError("phase decomposition only supports dense convolutions")
-        for ordered_taps, start in phase_plan(kernel_size, source.stride, source.padding):
+        for ordered_taps, start in phase_plan(
+            kernel_size, source.stride, source.padding
+        ):
             ordered_taps = list(ordered_taps)
             # Materialize this reversed phase kernel once.  Leaving the gather/reversal expression
             # lazy here would reinsert its indexing helpers into every exported inference graph.
@@ -90,14 +101,18 @@ class PhaseConvTranspose1d(nn.Module):
         if self.input_padding:
             value = mx.pad(value, [(0, 0), (0, 0), (0, self.input_padding)])
         outputs = []
-        for phase_weight, start in zip(self.phase_weights, self.phase_starts, strict=True):
+        for phase_weight, start in zip(
+            self.phase_weights, self.phase_starts, strict=True
+        ):
             phase = mx.conv1d(value, phase_weight, padding=phase_weight.shape[1] - 1)
             outputs.append(phase[:, start : start + value.shape[1], :] + self.bias)
-        output = mx.stack(outputs, axis=2).reshape(value.shape[0], value.shape[1] * self.stride, -1)
+        output = mx.stack(outputs, axis=2).reshape(
+            value.shape[0], value.shape[1] * self.stride, -1
+        )
         return output[:, :, : self.output_channels]
 
 
-def apply_precise_operators(model):
+def apply_precise_operators(model: nn.Module) -> None:
     """Opt-in inference conversion after loading weights; no process-wide policy changes.
 
     Prepare all replacements before installing them. The resulting parameter layout is

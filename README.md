@@ -65,13 +65,21 @@ import soundfile as sf
 sf.write("output.wav", waveform_int16, h.sampling_rate, "PCM_16")
 ```
 
-### Optional inference operators
+### Optional Inference Operators
 
-After loading a checkpoint, `use_precise_ops=True` opts into polyphase upsampling
-and channel-padded convolutions. This keeps the default path and checkpoint
-format unchanged. Numeric benefits depend on backend precision policy; requesting
-full-FP32 operations is a simpler control worth checking first.
-See [the supported geometry, tests and bounded historical evidence](docs/precision-operators.md).
+To use polyphase upsampling and channel-padded convolutions for inference:
+
+```python
+model = BigVGAN.from_pretrained(
+    "wyrom/mlx-bigvgan_v2_24khz_100band_256x",
+    use_precise_ops=True,
+)
+```
+
+The option defaults to `False` and is applied after loading the original weights.
+Numerical differences depend on the MLX backend and precision settings; this
+option does not guarantee better audio quality or faster inference.
+See [supported configurations and regression tests](docs/precision-operators.md).
 
 ### 3. Convert Original BigVGAN Weights to MLX Format
 

@@ -173,6 +173,7 @@ class BigVGAN(nn.Module):
         model.eval()
         if use_precise_ops:
             from .precision import apply_precise_operators
+
             apply_precise_operators(model)
         return model
 

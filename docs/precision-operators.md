@@ -32,62 +32,32 @@ phases restores sample order. Phase weights are materialized once during
 preparation so gather/reversal helpers do not reappear in every forward graph.
 Polyphase decomposition and zero channel padding are established transformations.
 
-## Check the simpler precision control first
+## Precision and performance
 
-In the recorded **MLX 0.32.2** control, starting a fresh process with
-`MLX_ENABLE_TF32=0` requested full-FP32 convolution/matmul. That alone reduced
-native-path MAE by 4737.8x on one fixed real-speech mel witness. The all-edits
-advantage fell from 5011.8x under the default policy to **1.05784x** under that
-request. This does not establish the arithmetic of every internal operation or
-a general accuracy guarantee. That witness differs from the synthetic panel
-below; it is not a matched rerun of those three cells.
+Polyphase decomposition preserves the real-arithmetic operation, but changes
+floating-point reduction order and backend kernel selection. Accuracy and latency
+therefore depend on the MLX version, hardware and precision settings. Compare
+against the default model on your own inputs before adopting this option.
 
-The large default-policy gap is therefore not an intrinsic accuracy advantage of
-polyphase algebra. Users seeking closer numerical agreement should consider the
-simpler precision control first. The optional formulation also exposes static
-kernel preparation without changing process-wide settings.
+This integration makes no audio-quality or speedup guarantee. Historical results
+from the source implementation do not benchmark this package integration.
 
-## Bounded historical result
+## Regression tests
 
-This table is from the frozen Waveform Last Mile implementation adapted from
-this repository's model layout. **It is not a new end-to-end benchmark of this
-patch.** It used the pinned NVIDIA BigVGAN-v2 24 kHz / 100-band / 256x checkpoint,
-one Apple M5 with 24 GiB unified memory, MLX 0.32.2, batch one, and synthetic
-float32 mel `[1,100,F]`. Seeds were `20260917 + F`. MAE measures agreement with
-PyTorch-MPS, not perceptual truth.
-
-| Mel frames | Audio seconds | Native MAE | Rewritten MAE | MAE ratio | Native / rewritten ms | Native / rewritten peak MLX MiB |
-|---:|---:|---:|---:|---:|---:|---:|
-| 16 | 0.171 | 1.106690e-04 | 1.134691e-07 | 975.3x | 68.145 / 65.625 | 705.91 / 686.03 |
-| 32 | 0.341 | 1.907449e-04 | 1.345970e-07 | 1417.2x | 124.611 / 126.846 | 980.67 / 938.03 |
-| 64 | 0.683 | 2.030354e-04 | 1.370920e-07 | 1481.0x | 268.484 / 262.392 | 1528.94 / 1442.04 |
-
-The geometric mean MAE ratio is 1269.721408x on 0.171–0.683 seconds of
-synthetic-mel output. No listening, linguistic-content, naturalness, long-form
-or causal-streaming claim follows. Latency passed the registered 1.05x
-**non-regression** bound; this is not material acceleration. Peak MLX allocation
-counters were lower in each cell; they are not whole-process memory.
-
-Timing used fresh native/rewritten/rewritten/native workers, three warmups and
-20 synchronized samples per worker on AC power with low-power mode off. Loading,
-first call, host copy and serialization were excluded. Static materialization
-removed 144 indexing helpers from the earlier rewrite (4334 to 4190 primitives);
-the final graph still exceeded the native graph's 4086 primitives.
-
-## Small regression checks
-
-Exact-rational geometry tests need no MLX, Torch, NumPy, weights, audio or download:
+The tests follow the repository's `test/*_test.py` layout. The geometry checks
+use exact rational arithmetic and run without third-party dependencies:
 
 ```sh
-python3 -B -m unittest discover -s test -p 'test_precision_geometry.py' -v
+python3 -B -m unittest discover -s test -p 'precision_geometry_test.py' -v
 ```
 
-Tiny native operator checks, in an existing Apple MLX environment:
+For native operator and checkpoint-loading checks, install the package in an
+Apple silicon MLX environment, then run:
 
 ```sh
-RUN_MLX_OPERATOR_TESTS=1 python3 -B -m unittest discover -s test -p 'test_precision*.py' -v
+pip install -e .
+python3 -B -m unittest discover -s test -p 'precision*_test.py' -v
 ```
 
-These check algebra and implementation behavior. They do not reproduce the
-historical timing, memory, 1270x ratio or a perceptual result. The historical source
-and exact receipt paths/hashes are listed in [the compact evidence index](precision-evidence.json).
+The native checks skip only when MLX is not installed. They use small synthetic
+inputs and a temporary local checkpoint; no model download or audio is required.
